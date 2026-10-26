@@ -1,0 +1,18 @@
+{
+  "name": "moviematch",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pick a movie the whole group will enjoy: genre matching + semantic search with a Hugging Face embedding model.",
+  "type": "module",
+  "scripts": {
+    "build:data": "node scripts/build-data.mjs",
+    "test": "node --test tests/scoring.test.mjs",
+    "start": "npx --yes serve@14.2.6 ."
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@huggingface/transformers": "3.8.1"
+  }
+}

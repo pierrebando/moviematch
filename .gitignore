@@ -1,0 +1,9 @@
+# Secrets: the TMDB token lives here and must never be committed
+.env
+*.env
+!.env.example
+# Raw TMDB responses cached by the build script
+.cache/
+node_modules/
+.DS_Store
+# Note: data/ is intentionally NOT ignored (movies.json + embeddings.bin are committed)
