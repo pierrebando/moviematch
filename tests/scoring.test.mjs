@@ -5,6 +5,8 @@ import {
   groupScore,
   genreScore,
   weightedRating,
+  compareResults,
+  finalScore,
   strictestRuntime,
   minMaxNormalize,
   explainResult,
@@ -88,7 +90,7 @@ test('mean + min (least misery) beats a polarizing movie that mean-only would pi
   assert.deepEqual(titles(ranking), ['Consensus', 'Polarizing']);
 });
 
-test('ties on group score are broken by weighted rating, then vote count', () => {
+test('between equally fitting movies, the better weighted rating wins', () => {
   const C = 7;
   const fewVotesHighRating = movie({ title: 'Niche', rating: 9, votes: 50 }); // WR ≈ 7.18
   const manyVotesGoodRating = movie({ title: 'Popular', rating: 8, votes: 5000 }); // WR ≈ 7.91
@@ -98,12 +100,59 @@ test('ties on group score are broken by weighted rating, then vote count', () =>
   const ranking = rankMovies([fewVotesHighRating, manyVotesGoodRating], people, { meanRating: C });
   assert.deepEqual(titles(ranking), ['Popular', 'Niche']);
   assert.equal(ranking.results[0].group, ranking.results[1].group);
+  assert.equal(ranking.results[0].quality, 1);
+  assert.equal(ranking.results[1].quality, 0);
 
   // Same group score and same weighted rating (R = C): the vote count is the last word.
   const a = movie({ title: 'More votes', rating: 7, votes: 4000 });
   const b = movie({ title: 'Fewer votes', rating: 7, votes: 900 });
   assert.ok(Math.abs(weightedRating(a, 7) - weightedRating(b, 7)) < 1e-9); // R = C makes WR equal
   assert.deepEqual(titles(rankMovies([b, a], people, { meanRating: 7 })), ['More votes', 'Fewer votes']);
+});
+
+test('ties on the final score are broken by weighted rating, then vote count', () => {
+  const result = (title, score, wr, votes) => ({ score, wr, movie: { title, votes } });
+  const sorted = [
+    result('Low WR', 0.5, 6.9, 9000),
+    result('High WR', 0.5, 7.4, 100),
+    result('Same WR, fewer votes', 0.5, 6.9, 300),
+    result('Best score', 0.51, 5, 10),
+  ].sort(compareResults);
+  assert.deepEqual(
+    sorted.map((r) => r.movie.title),
+    ['Best score', 'High WR', 'Low WR', 'Same WR, fewer votes'],
+  );
+});
+
+test('the quality factor reorders close fits but never beats a clearly better fit', () => {
+  const people = [person('Lea', { liked: [COMEDY] }), person('Tom', { liked: [DRAMA] })];
+  const C = 7;
+  // 'Weak' fits a bit better (0.5 vs 0.33 group fit) but is rated far lower.
+  const weakButBetterFit = movie({ title: 'Weak', genres: [COMEDY, DRAMA], rating: 4.6, votes: 5000 });
+  const goodButSlightlyWorse = movie({ title: 'Good', genres: [COMEDY, DRAMA, ACTION], rating: 7.8, votes: 5000 });
+  const ranking = rankMovies([weakButBetterFit, goodButSlightlyWorse], people, { meanRating: C });
+  assert.ok(ranking.results.find((r) => r.movie.title === 'Weak').group > ranking.results.find((r) => r.movie.title === 'Good').group);
+  assert.deepEqual(titles(ranking), ['Good', 'Weak']);
+
+  // A clear fit gap (1.0 vs 0.33 group fit) is not overturned by the rating.
+  const perfect = movie({ title: 'Perfect fit', genres: [COMEDY], rating: 4.6, votes: 5000 });
+  const poor = movie({ title: 'Poor fit', genres: [COMEDY, ACTION, HORROR], rating: 8.5, votes: 5000 });
+  const solo = rankMovies([perfect, poor], [person('Lea', { liked: [COMEDY] })], { meanRating: C });
+  assert.deepEqual(titles(solo), ['Perfect fit', 'Poor fit']);
+  assert.equal(solo.results[0].score, 0.8); // 0.8 * 1 + 0.2 * 0
+  assert.equal(finalScore(0.5, 0.5), 0.5);
+});
+
+test('explanations mention a high or low TMDB rating', () => {
+  const people = [person('Lea', { liked: [COMEDY] })];
+  const ranking = rankMovies(
+    [movie({ title: 'Loved', rating: 8.4, votes: 9000 }), movie({ title: 'Meh', rating: 4.6, votes: 9000 })],
+    people,
+    { meanRating: 6.5 },
+  );
+  const [loved, meh] = ranking.results;
+  assert.match(explainResult(loved, people, () => 'Comedy'), /Highly rated on TMDB \(8\.4\/10\)/);
+  assert.match(explainResult(meh, people, () => 'Comedy'), /Rated lower on TMDB \(4\.6\/10\)/);
 });
 
 test('a 1-person group: group score equals the individual score', () => {

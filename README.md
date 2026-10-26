@@ -77,9 +77,11 @@ All paths in the app are relative (`./src/…`, `../data/…`), so it works from
 
 **5. Group score, "least misery":** `G = 0.5 × mean(s) + 0.5 × min(s)`. The average alone would happily pick a movie two people love and the third hates; adding the minimum makes sure nobody is left unhappy.
 
-**6. Ranking:** by `G` (rounded to 2 decimals), ties broken by a weighted rating `WR = v/(v+m) × R + m/(v+m) × C` (R = TMDB rating, v = votes, m = 500, C = mean rating of the catalog), then by vote count.
+**6. Quality.** Group fit alone can crown a movie nobody actually enjoyed (in testing, a 4.6/10 comedy came first). So each movie also gets a weighted rating `WR = v/(v+m) × R + m/(v+m) × C` (R = TMDB rating, v = votes, m = 500, C = mean rating of the catalog), which pulls movies with few votes towards the average. `WR` is rescaled to [0, 1] across the remaining movies: `q`.
 
-Each result comes with a deterministic explanation built from these numbers (who loves which genre, whose description it matches, who is the least happy). No chatbot involved. If no movie survives the filters, MovieMatch tries relaxing each constraint on its own and tells you which one would help most.
+**7. Final score and ranking:** `S = 0.8 × G + 0.2 × q`, rounded to 2 decimals and shown on each card. Fit stays the main driver: the rating reorders movies that fit almost equally well, but cannot rescue a poor fit. Ties are broken by `WR`, then by vote count.
+
+Each result comes with a deterministic explanation built from these numbers (who loves which genre, whose description it matches, whether it is especially well or poorly rated, who is the least happy). No chatbot involved. If no movie survives the filters, MovieMatch tries relaxing each constraint on its own and tells you which one would help most.
 
 If the model cannot load (offline, old browser), MovieMatch keeps working on genres only.
 

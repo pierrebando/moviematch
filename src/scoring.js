@@ -11,13 +11,16 @@ export const GENRE_WEIGHT = 0.6; // s_p = GENRE_WEIGHT * g_p + TEXT_WEIGHT * t_p
 export const TEXT_WEIGHT = 0.4;
 export const MEAN_WEIGHT = 0.5; // G = MEAN_WEIGHT * mean(s_p) + MIN_WEIGHT * min(s_p)
 export const MIN_WEIGHT = 0.5;
+export const QUALITY_WEIGHT = 0.2; // S = (1 - QUALITY_WEIGHT) * G + QUALITY_WEIGHT * q
 export const WR_MIN_VOTES = 500; // m in the weighted rating
 export const NEUTRAL_GENRE_SCORE = 0.5; // person who liked no genre
-export const NEUTRAL_TEXT_SCORE = 0.5; // all surviving movies equally similar
+export const NEUTRAL_TEXT_SCORE = 0.5; // all surviving movies equally similar (or equally rated)
 
-// Explanation thresholds (normalized text score, group score delta).
+// Explanation thresholds (normalized text score, group score delta, normalized quality).
 const CLOSE_TEXT_SCORE = 0.7;
 const TEXT_BOOST_DELTA = 0.05;
+const HIGH_QUALITY = 0.8;
+const LOW_QUALITY = 0.2;
 const QUOTE_MAX_LENGTH = 60;
 
 // ---------------------------------------------------------------- helpers
@@ -86,7 +89,7 @@ export function genreScore(movie, person) {
   return movie.genres.filter((g) => liked.has(g)).length / movie.genres.length;
 }
 
-/** Min-max normalization to [0, 1]; a constant list maps to NEUTRAL_TEXT_SCORE. */
+/** Min-max normalization to [0, 1]; a constant list maps to NEUTRAL_TEXT_SCORE (0.5). */
 export function minMaxNormalize(values) {
   let lo = Infinity;
   let hi = -Infinity;
@@ -108,8 +111,13 @@ export function groupScore(scores) {
   return MEAN_WEIGHT * mean(scores) + MIN_WEIGHT * Math.min(...scores);
 }
 
+/** Final score: mostly group fit, plus a little TMDB quality so a badly rated movie needs a clearly better fit to win. */
+export function finalScore(group, quality) {
+  return (1 - QUALITY_WEIGHT) * group + QUALITY_WEIGHT * quality;
+}
+
 export function compareResults(a, b) {
-  if (b.group !== a.group) return b.group - a.group;
+  if (b.score !== a.score) return b.score - a.score;
   const dwr = b.wr - a.wr;
   if (Math.abs(dwr) > 1e-9) return dwr; // ignore floating-point noise
   return b.movie.votes - a.movie.votes;
@@ -117,7 +125,8 @@ export function compareResults(a, b) {
 
 /**
  * Full ranking. Returns { results, eliminated: {veto, runtime, provider}, total }.
- * Each result: { index, movie, group, rawGroup, genreOnlyGroup, wr, perPerson: [{name, genre, text, score}] }.
+ * Each result: { index, movie, score, group, rawGroup, genreOnlyGroup, wr, quality, perPerson: [{name, genre, text, score}] }.
+ * `group` is the group fit G, `quality` the weighted rating normalized across survivors, `score` the final S used to sort.
  */
 export function rankMovies(movies, people, { providers = [], similarities = [], meanRating: C } = {}) {
   const prepared = people.map((p) => ({ ...p, liked: toSet(p.liked), refused: toSet(p.refused) }));
@@ -137,6 +146,8 @@ export function rankMovies(movies, people, { providers = [], similarities = [], 
   });
 
   const ratingMean = C ?? meanRating(movies);
+  const ratings = survivors.map((i) => weightedRating(movies[i], ratingMean));
+  const quality = minMaxNormalize(ratings);
   const results = survivors.map((index, j) => {
     const movie = movies[index];
     const perPerson = prepared.map((p, k) => {
@@ -152,7 +163,9 @@ export function rankMovies(movies, people, { providers = [], similarities = [], 
       rawGroup,
       group: round2(rawGroup),
       genreOnlyGroup: groupScore(perPerson.map((x) => x.genre)),
-      wr: weightedRating(movie, ratingMean),
+      wr: ratings[j],
+      quality: quality[j],
+      score: round2(finalScore(rawGroup, quality[j])),
     };
   });
   results.sort(compareResults);
@@ -220,6 +233,11 @@ export function explainResult(result, people, genreName = String) {
       sentences.push(`Not a close match to ${withText.length === 1 ? `${best.name}'s description` : 'the descriptions'}.`);
     }
   }
+
+  // Did the TMDB rating weigh in?
+  const rating = `${movie.rating.toFixed(1)}/10`;
+  if (result.quality >= HIGH_QUALITY) sentences.push(`Highly rated on TMDB (${rating}).`);
+  else if (result.quality <= LOW_QUALITY) sentences.push(`Rated lower on TMDB (${rating}), but the fit makes up for it.`);
 
   // Who is happiest / least happy.
   if (perPerson.length > 1) {

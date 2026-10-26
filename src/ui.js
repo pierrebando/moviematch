@@ -1,7 +1,7 @@
 // DOM building and rendering. No app state lives here: main.js owns state and
 // calls these functions. User text is always inserted as text, never as HTML.
 
-import { pct } from './scoring.js';
+import { pct, QUALITY_WEIGHT } from './scoring.js';
 
 export const MAX_PEOPLE = 4;
 export const PERSON_COLORS = ['#ff7a7a', '#5cb8ff', '#ffc94d', '#5be3b0'];
@@ -254,13 +254,15 @@ function poster(movie, size) {
   return img;
 }
 
-function matchRing(score) {
+const SCORE_TITLE = `Score: ${pct(1 - QUALITY_WEIGHT)}% group fit + ${pct(QUALITY_WEIGHT)}% TMDB rating`;
+
+function scoreRing(score) {
   const value = pct(score);
   return h(
     'div',
-    { class: 'ring', style: { '--value': value }, role: 'img', 'aria-label': `Group match ${value}%` },
+    { class: 'ring', style: { '--value': value }, role: 'img', 'aria-label': `Score ${value}%`, title: SCORE_TITLE },
     h('span', { class: 'ring-value' }, `${value}%`),
-    h('span', { class: 'ring-label' }, 'match'),
+    h('span', { class: 'ring-label' }, 'score'),
   );
 }
 
@@ -327,7 +329,7 @@ function resultCard(result, rank, view) {
         'div',
         { class: 'movie-head' },
         h('h3', { class: 'movie-title' }, tmdbLink(movie, movie.title), movie.year ? h('span', { class: 'year' }, ` ${movie.year}`) : null),
-        matchRing(result.group),
+        scoreRing(result.score),
       ),
       metaLine(movie, view.genreName),
       h('p', { class: 'why' }, icon('sparkle'), view.explain(result)),
@@ -352,7 +354,7 @@ function resultRow(result, rank, view) {
       metaLine(movie, view.genreName),
       h('p', { class: 'why why--small' }, view.explain(result)),
     ),
-    h('span', { class: 'row-pct', title: 'Group match' }, `${pct(result.group)}%`),
+    h('span', { class: 'row-pct', title: SCORE_TITLE }, `${pct(result.score)}%`),
   );
 }
 
